@@ -1,33 +1,79 @@
-#!/bin/bash
+#!/usr/bin/env perl
 
-case $1 in
-	1)
-		MICNAME=MICROPHONE
-		;;
-	2)
-		MICNAME=MICROPHONE_1
-		;;
-	3)
-		MICNAME=MICROPHONE_2
-		;;
-	4)
-		MICNAME=MICROPHONE_3
-		;;
-	5)
-		MICNAME=MICROPHONE_4
-		;;
-	*)
-		MICNAME=$1
-		;;
-esac
+use strict;
 
-if [ -z "$MICNAME" ]; then
-	exit 10
-fi
+use Data::Dumper;
 
-while `true`; do
-	if [ -L /proc/asound/${MICNAME} ]; then
-		alsa_mic -p 512 -n 4 -r 44100 -c 1 -j Mic\ $1 -d hw:${MICNAME}
-	fi
-	sleep 5
-done
+my $code = shift || die "Usage: mic vid:pid:serial:name";
+
+my @cdata = split(/:/, $code);
+if (@cdata != 4) {
+    die "Usage: mic vid:pid:serial:name";
+}
+
+my $vid = $cdata[0];
+my $pid = $cdata[1];
+my $sn = $cdata[2];
+my $name = $cdata[3];
+
+while (1) {
+    my $card = getCardByID($vid, $pid, $sn);
+    if ($card >= 0) {
+        print "Identified card $card as $name\n";
+        system(qq{alsa_mic -p 512 -n 4 -r 44100 -c 1 -j "$name" -d hw:$card});
+    }
+
+    sleep 10
+}
+
+
+print "hw:" . getCardByID($vid, $pid, $sn) . "\n";
+
+sub getCardByID($$$) {
+    my $vid = shift;
+    my $pid = shift;
+    my $sn = shift;
+
+    my @cards = getAudioCards();
+    my @data = `lsusb -d $vid:$pid`;
+
+    foreach my $dev (@data) {
+        if ($dev =~ /Bus (.+) Device ([^:]+):/) {
+            my $bus = $1;
+            my $device = $2;
+
+            my @udev = `udevadm info --query=property --name=bus/usb/$bus/$device`;
+            foreach my $ul (@udev) {
+                chomp($ul);
+                if ($ul =~ /^ID_SERIAL_SHORT=(.*)$/) {
+                    if ($sn eq $1) {
+                        foreach my $card (@cards) {
+
+                            open(F, "</proc/asound/card$card/usbbus");
+                            my $ub = <F>;
+                            chomp($ub);
+                            close(F);
+                            if ($ub eq "$bus/$device") {
+                                return $card - 0;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return -1;
+}
+
+
+sub getAudioCards() {
+    my @cards;
+    opendir(my $dir, "/proc/asound");
+    while (my $file = readdir($dir)) {
+        if ($file =~ /^card(\d+)$/) {
+            push(@cards, $1);
+        }
+    }
+    closedir($dir);
+    return @cards;
+}
