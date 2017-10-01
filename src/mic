@@ -1,0 +1,33 @@
+#!/bin/bash
+
+case $1 in
+	1)
+		MICNAME=MICROPHONE
+		;;
+	2)
+		MICNAME=MICROPHONE_1
+		;;
+	3)
+		MICNAME=MICROPHONE_2
+		;;
+	4)
+		MICNAME=MICROPHONE_3
+		;;
+	5)
+		MICNAME=MICROPHONE_4
+		;;
+	*)
+		MICNAME=$1
+		;;
+esac
+
+if [ -z "$MICNAME" ]; then
+	exit 10
+fi
+
+while `true`; do
+	if [ -L /proc/asound/${MICNAME} ]; then
+		alsa_mic -p 512 -n 4 -r 44100 -c 1 -j Mic\ $1 -d hw:${MICNAME}
+	fi
+	sleep 5
+done
